@@ -43,3 +43,5 @@ cmake .. \
 -DKokkos_ENABLE_CUDA_LAMBDA=On \
 -DKokkosKernels_INST_MEMSPACE_CUDAUVMSPACE=OFF \
 ```
+
+bsub -W 6:00 -nnodes 1 --shared-launch -Is bash
