@@ -24,6 +24,8 @@
     the registers of many threads
   * An MxN FT should be initializable from a Kokkos::View<T[M][N]>
   * The FTs will expose team-oriented functions that will assert the team size is large enough
+  * This implementation allows a single parameterized fragment-oriented implementation of various algorithms
+  and different versions of that algorithm can be dispatched according to available architecture and input size
 
   S2: Fragment Operations
   -----------------------
@@ -55,8 +57,10 @@
   Right now, for CUDA fragments, the first 32 threads in a team participate and the rest
   are shut off.
 
-  I4: To what extent do we expect a fragment user to adjust various parameters of their implementations
-  for different backends? Too much and there's no point to the abstraction.
+  I4: related to I3, could we automatically handle larger fragments as multiple smaller fragments?
+
+  I5: what to do if operations start to diverge, e.g. Nvidia implements fragment transpose and AMD does not.
+  Do we support that operation on all backends and just be slow if it's not AMD, or do we support it on none of them?
 
   Other Notes
   ------------
@@ -315,7 +319,7 @@ KOKKOS_INLINE_FUNCTION void store(const MemberType &team_member, ViewType &view,
 
 
 
-template<typename MemberType, typename CView, typename AView, typename BView
+template<typename MemberType, typename CView, typename AView, typename BView,
 unsigned M, unsigned N, unsigned K>
 struct Functor {
 
@@ -383,13 +387,12 @@ int main(int argc, char **argv) {
     typedef Kokkos::View<Kokkos::Experimental::half_t[32][32]> AView;
     typedef Kokkos::View<Kokkos::Experimental::half_t[32][32]> BView;
     typedef Kokkos::View<float[32][32]> CView;
-
-    // policy
-    typedef Kokkos::TeamPolicy<>::member_type member_type;
-
     AView A;
     BView B;
     CView C;
+
+    // policy
+    typedef Kokkos::TeamPolicy<>::member_type member_type;
 
     // define M,N,K appropriate for your architecture
     constexpr unsigned M = 16;
