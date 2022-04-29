@@ -315,7 +315,8 @@ KOKKOS_INLINE_FUNCTION void store(const MemberType &team_member, ViewType &view,
 
 
 
-template<typename MemberType, typename CView, typename AView, typename BView>
+template<typename MemberType, typename CView, typename AView, typename BView
+unsigned M, unsigned N, unsigned K>
 struct Functor {
 
     AView A_;
@@ -326,9 +327,9 @@ struct Functor {
     typedef typename BView::non_const_value_type BScalar;
     typedef typename CView::non_const_value_type CScalar;
 
-    typedef Kokkos::View<AScalar[16][16]> ASubView;
-    typedef Kokkos::View<BScalar[16][16]> BSubView;
-    typedef Kokkos::View<CScalar[16][16]> CSubView;
+    typedef Kokkos::View<AScalar[M][K]> ASubView;
+    typedef Kokkos::View<BScalar[K][N]> BSubView;
+    typedef Kokkos::View<CScalar[M][N]> CSubView;
 
 
     Functor(const CView &C, const AView &A, const BView &B) :C_(C), A_(A), B_(B) {}
@@ -339,23 +340,23 @@ struct Functor {
         const size_t lim = team_member.league_rank() / C_.extent(1);
         const size_t lin = team_member.league_rank() % C_.extent(1);
 
-        CSubView C_sub(C_, Kokkos::make_pair(lim, lim+16), Kokkos::make_pair(lin, lin+16));
-        // auto C_sub = Kokkos::subview(C_, Kokkos::make_pair(lim, lim+16), Kokkos::make_pair(lin, lin+16));
+        CSubView C_sub(C_, Kokkos::make_pair(lim, lim+M), Kokkos::make_pair(lin, lin+N));
+        // auto C_sub = Kokkos::subview(C_, Kokkos::make_pair(lim, lim+M), Kokkos::make_pair(lin, lin+N));
 
         printf("%d, %d\n", team_member.league_rank(), team_member.team_rank());
 
         // this should be a CUDA frag
-        Frag<MemberType, UseC, 16, 16, 16, CScalar> cuda_frag_c;
+        Frag<MemberType, UseC, M, N, K, CScalar> cuda_frag_c;
         load(team_member, cuda_frag_c, C_sub);
 
-        for (size_t kb = 0; kb < A_.extent(1); kb += 16) {
-            Frag<MemberType, UseA, 16, 16, 16, AScalar, typename AView::array_layout> frag_a;
-            Frag<MemberType, UseB, 16, 16, 16, BScalar, typename BView::array_layout> frag_b;
+        for (size_t kb = 0; kb < A_.extent(1); kb += K) {
+            Frag<MemberType, UseA, M, N, K, AScalar, typename AView::array_layout> frag_a;
+            Frag<MemberType, UseB, M, N, K, BScalar, typename BView::array_layout> frag_b;
 
-            ASubView A_sub(A_, Kokkos::make_pair(lim, lim+16), Kokkos::make_pair(kb, kb+16));
-            BSubView B_sub(B_, Kokkos::make_pair(kb, kb+16), Kokkos::make_pair(lin, lin+16));
-            // auto A_sub = Kokkos::subview(A_, Kokkos::make_pair(lim, lim+16), Kokkos::make_pair(kb, kb+16));
-            // auto B_sub = Kokkos::subview(B_, Kokkos::make_pair(kb, kb+16), Kokkos::make_pair(lin, lin+16));
+            ASubView A_sub(A_, Kokkos::make_pair(lim, lim+M), Kokkos::make_pair(kb, kb+K));
+            BSubView B_sub(B_, Kokkos::make_pair(kb, kb+K), Kokkos::make_pair(lin, lin+N));
+            // auto A_sub = Kokkos::subview(A_, Kokkos::make_pair(lim, lim+M), Kokkos::make_pair(kb, kb+K));
+            // auto B_sub = Kokkos::subview(B_, Kokkos::make_pair(kb, kb+K), Kokkos::make_pair(lin, lin+N));
 
             load(team_member, frag_a, A_sub);
             load(team_member, frag_b, B_sub);
@@ -378,35 +379,35 @@ int main(int argc, char **argv) {
 
     Kokkos::initialize(argc, argv);
 
+    // input matrix
     typedef Kokkos::View<Kokkos::Experimental::half_t[32][32]> AView;
     typedef Kokkos::View<Kokkos::Experimental::half_t[32][32]> BView;
     typedef Kokkos::View<float[32][32]> CView;
+
+    // policy
+    typedef Kokkos::TeamPolicy<>::member_type member_type;
 
     AView A;
     BView B;
     CView C;
 
+    // define M,N,K appropriate for your architecture
+    constexpr unsigned M = 16;
+    constexpr unsigned N = 16;
+    constexpr unsigned K = 16;
 
-    Kokkos::View<Kokkos::Experimental::half_t[16][16]> A_sub(A, std::make_pair(0, 16), std::make_pair(0, 16));
-    Kokkos::View<Kokkos::Experimental::half_t[16][16]> B_sub(B, std::make_pair(0, 16), std::make_pair(0, 16));
-    Kokkos::View<float[16][16]> C_sub(C, std::make_pair(0, 160), std::make_pair(0, 16));
-
-    typedef Kokkos::TeamPolicy<>::member_type member_type;
-
-    const size_t mBlocks = (C.extent(0) + 16 - 1) / 16;
-    const size_t nBlocks = (C.extent(1) + 16 - 1) / 16;
-
+    // policy configuration based on matrix size and architecture
+    const size_t mBlocks = (C.extent(0) + M - 1) / M;
+    const size_t nBlocks = (C.extent(1) + N - 1) / N;
     const size_t leagueSize = mBlocks * nBlocks;
     const size_t teamSize = 32;
-
     Kokkos::TeamPolicy<> policy(leagueSize, teamSize);
 
-    Functor<member_type, CView, AView, BView> gemm(C, A, B);
-
+    // run the multiplication
+    Functor<member_type, CView, AView, BView, M, N, K> gemm(C, A, B);
     Kokkos::parallel_for(policy, gemm);
     Kokkos::fence();
 
 
     Kokkos::finalize();
-
 }
