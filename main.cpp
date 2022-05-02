@@ -79,6 +79,15 @@
   May be best expressed as larger fragment types distributed across the team
   How to decide whether the larger fragment should be stacked up on one group of threads, or distributed across multiple groups?
 
+  * Larger team containing more independent fragments (to increase occupancy)
+    * "Vector Fragment"
+        * CUDA / AMD: one fragment per hardware group
+        * Fallback: arbitrarily size "hardware groups" and do the same
+  * Larger team with a larger fragment (shared memory, etc)
+    one fragment per hardware group
+    different type because operations are implemented differently
+
+  Perhaps the # of independent fragments depends on the team size, and using a larger fragment requires a larger team size
 
   Perhaps the user specifies a fragment size, and then asks how many threads per team are needed
   Perhaps the abstraction is wrong
