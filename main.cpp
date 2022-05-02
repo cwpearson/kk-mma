@@ -67,6 +67,49 @@
 
   CUDA nomenclature is m,n,k:
   matrix A is mxk, matrix B is k x n, and matrix C is mxn
+
+  Brainstorm
+  ----------
+
+  The problem this aims to solve is that we want a single fragment-oriented implementation that works across
+  architectures.
+  Problem is that Nvidia distributes fragment across 32 threads, AMD across 64 threads, and our fallback whatever we want.
+  That defines the minimum team size required.
+  Implementors may want to use a larger team to operate on multiple native fragments at once.
+  May be best expressed as larger fragment types distributed across the team
+  How to decide whether the larger fragment should be stacked up on one group of threads, or distributed across multiple groups?
+
+
+  Perhaps the user specifies a fragment size, and then asks how many threads per team are needed
+  Perhaps the abstraction is wrong
+
+  Want to be able to use a team to operate on multiple fragments at once
+  Certain operations could be optimized by having a larger team on a larger fragment
+  The way to express this is to merge the fragments into a larger one and issue a supported operation
+  The larger team distributes the fragments throughout the team (one/more fragment per 32 threads)
+
+  Vertically stack P fragments
+  v_stack(f1<UseA, M1, N, K>, f2<UseA, M2, N, K>, ...) -> Frag<UseA, M1+M2+..., N, K>
+  v_stack(f1<UseB, M, N, K1>, f2<UseB, M, N, K2>, ...) -> Frag<UseB, M, N, K1+K2+...>
+  v_stack(f1<UseC, M1, N, K>, f2<UseC, M2, N, K>, ...) -> Frag<UseC, M1+M2+..., N, K>
+
+  Horizontally stack fragments
+  h_stack(f1<UseA, M, N, K1>, f2<UseA, M, N, K2>) -> Frag<UseA, 2, N, K1+K2+...>
+  h_stack(f1<UseB, M, N1, K>, f2<UseB, M, N2, K>) -> Frag<UseB, M, N1+N2+..., K>
+  h_stack(f1<UseC, M, N1, K>, f2<UseC, M, N2, K>) -> Frag<UseC, M, N1+N2+..., K>
+
+  Vertically split fragments
+  v_split<M1, M2, ...>(f<UseA, M1+M2+..., N, K>) -> f1<UseA, M1, N, K>, f2<UseA, M2, N, K>, f3<UseA, ..., N, K>
+
+  Horizontally split fragments
+
+
+
+  To-Do
+  -----
+  [ ] loading from a smaller subview zeros the rest of the fragment
+  [ ] correct API for shared memory requirements of fragment operations
+    [ ] for now, a partner function that takes the same arguments as the operation but returns shared memory requirements
 */
 
 
